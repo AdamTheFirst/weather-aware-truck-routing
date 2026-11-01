@@ -91,7 +91,9 @@ def _parse_osrm_route(r):
     durations = []
     for leg in r["legs"]:
         durations.extend(leg.get("annotation", {}).get("duration", []))
-    via = " / ".join(dict.fromkeys(leg["summary"] for leg in r["legs"] if leg.get("summary")))
+    # OSRM gives "Road A, Road B" per leg; flatten and drop repeats across legs
+    names = [n.strip() for leg in r["legs"] for n in leg.get("summary", "").split(",") if n.strip()]
+    via = ", ".join(dict.fromkeys(names))
     return {
         "coords": [tuple(c) for c in r["geometry"]["coordinates"]],
         "osrm_durations": durations,
