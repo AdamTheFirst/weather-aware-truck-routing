@@ -45,10 +45,9 @@ For the ranking itself, I chose to follow the spec literally: No Travel miles, t
 - Backend tests: 53 passed on the pre-fix commit `a6fb8c5`. After the fixes: 77 passed, with lint and the frontend build clean.
 - From the review (pre-fix, live APIs, Denver → Salt Lake City): plan 3.6 s cold and 0.14 s cached; 4.4 s end to end in the browser; 48 slider steps in 0.68 s with zero network requests; 60 fps idle.
 - Hosted app: https://truck-routing-7za4.onrender.com on Render's free tier. The first request after it sleeps takes about 50 seconds while the instance wakes up.
-- Live Denver → Salt Lake City timing on the hosted app after the redeploy: TODO.
+- Live Denver → Salt Lake City on the hosted app after the redeploy: Route B recommended; about 36 s for the first plan and about 24 s for a repeat on the free instance.
 
 ## What I verified myself
-<!-- Salih: keep only the checks you did yourself -->
 - The `test_risk.py` boundary cases against the PDF table, value by value, including the strict `>` cases.
 - Units in a live Open-Meteo response: mph for wind, and inches for rain, showers and snowfall.
 - A live Denver → Salt Lake City trip at 42,000 lb, which is where the slow-detour recommendation showed up.
