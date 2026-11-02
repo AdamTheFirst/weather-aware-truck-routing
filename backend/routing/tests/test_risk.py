@@ -154,22 +154,25 @@ class TestRecommend:
         routes = [_route("a", duration=5000), _route("b", duration=4000)]
         assert recommend(routes)["id"] == "b"
 
-    def test_near_equal_avg_risk_falls_through_to_time(self):
-        # Gap of 0.10 is below the 0.25 tolerance, so the shorter trip wins
-        # even though its average is a tenth higher.
+    def test_denver_slc_shape_prefers_the_lowest_average_risk(self):
+        # No High, Severe, or No Travel miles. B is slower than A but calmer,
+        # so the spec order picks B.
         routes = [
-            _route("A", avg=0.10, duration=9 * 3600),
-            _route("C", avg=0.00, duration=13 * 3600),
-        ]
-        assert recommend(routes)["id"] == "A"
-
-    def test_avg_risk_gap_at_the_tolerance_still_prefers_the_calmer_route(self):
-        # The tolerance is strict: a gap of 0.25 is not "below" it.
-        routes = [
-            _route("A", avg=0.25, duration=5 * 3600),
-            _route("B", avg=0.00, duration=12 * 3600),
+            _route("A", avg=0.096, duration=8.98 * 3600),
+            _route("B", avg=0.0, duration=9.71 * 3600),
+            _route("C", avg=0.091, duration=9.97 * 3600),
         ]
         assert recommend(routes)["id"] == "B"
+
+    def test_avg_risk_equal_at_3_decimals_falls_through_to_time(self):
+        # 0.0964 and 0.0956 are both 0.096 at 3 decimals. That is float noise,
+        # so the shorter trip wins. A real hundredth still would not.
+        routes = [
+            _route("A", avg=0.0964, duration=8.98 * 3600),
+            _route("B", avg=0.0956, duration=9.71 * 3600),
+        ]
+        assert round(0.0964, 3) == round(0.0956, 3) == 0.096
+        assert recommend(routes)["id"] == "A"
 
     def test_no_travel_beats_everything(self):
         # A route that crosses a No Travel zone should never be recommended
@@ -181,9 +184,28 @@ class TestRecommend:
         assert recommend([]) is None
 
 
-def test_near_tie_reason_says_the_route_is_fastest():
+def test_reason_names_lowest_average_risk():
     from routing.planner import _explain
 
-    fast = _route("A", avg=0.10, duration=9 * 3600)
-    slow = _route("C", avg=0.00, duration=13 * 3600)
-    assert "fastest" in _explain(fast, [fast, slow])
+    routes = [
+        _route("A", avg=0.096, duration=8.98 * 3600),
+        _route("B", avg=0.0, duration=9.71 * 3600),
+        _route("C", avg=0.091, duration=9.97 * 3600),
+    ]
+    best = recommend(routes)
+    assert _explain(best, routes) == (
+        "Route B is recommended because it has the lowest average weather risk."
+    )
+
+
+def test_reason_uses_duration_when_average_risk_matches():
+    from routing.planner import _explain
+
+    routes = [
+        _route("A", avg=0.0964, duration=8.98 * 3600),
+        _route("B", avg=0.0956, duration=9.71 * 3600),
+    ]
+    best = recommend(routes)
+    assert _explain(best, routes) == (
+        "Route A is recommended because weather risk is similar and it is the fastest."
+    )

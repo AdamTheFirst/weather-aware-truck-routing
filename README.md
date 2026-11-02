@@ -108,12 +108,12 @@ The ranking talks about Severe/High *miles*, but we only know the weather at poi
 ### Recommendation
 Routes are sorted by: **No Travel miles** (my addition, see below), then Severe miles, then High miles, then average risk, then travel time. The UI shows a one-line reason for why the winner won. If that route still has No Travel miles the banner is red, and if it still has Severe miles the banner is orange, instead of a green all-clear.
 
-Average risk is a distance-weighted mean of the levels 0–4. It is only consulted once No Travel, Severe and High miles are tied, so a small gap there is Low versus Moderate, not a storm the mile counts already caught. Gaps **below 0.25** (less than a quarter of the route one band worse) are treated as a tie and fall through to travel time. A gap of 0.25 or more still picks the calmer route. One-decimal rounding would not do this: 0.00 and 0.10 still differ at one decimal.
+Average risk is the distance-weighted mean of the levels 0–4. It is compared at 3 decimal places, the same precision stored on the summary. The lower average wins, including a small gap such as 0.000 against 0.096. Only values that are equal once rounded to 3 decimals fall through to travel time, which absorbs floating-point noise and nothing coarser.
 
 > The brief doesn't mention No Travel in the ranking. A route with 1 mile of No Travel shouldn't beat a route with 50 Severe miles, so No Travel goes first.
 
 ### Getting 3 routes
-OSRM often returns only 1–2 alternatives. When that happens we add a via point to the left/right of the straight line between origin and destination and ask again. Results that are near-duplicates (within 2% distance and time), detours more than 40% longer, or routes more than 25% slower than the fastest one are dropped. The time check matters: a Denver–Salt Lake City via route was only about 11% longer in miles but about 48% slower (13.27 h vs 8.98 h), and it was winning on a 0.10 average-risk gap. It works, but it's the weakest part of the backend. A provider with real truck alternatives (HERE, TomTom, OpenRouteService `driving-hgv`) would be the first upgrade.
+OSRM often returns only 1–2 alternatives. When that happens we add a via point to the left/right of the straight line between origin and destination and ask again. Results that are near-duplicates (within 2% distance and time), detours more than 40% longer, or routes more than 25% slower than the fastest one are dropped. The time check matters: a Denver–Salt Lake City via route was only about 11% longer in miles but about 48% slower (13.27 h vs 8.98 h). It works, but it's the weakest part of the backend. A provider with real truck alternatives (HERE, TomTom, OpenRouteService `driving-hgv`) would be the first upgrade.
 
 ### Heatmap
 - A grid of points is laid over the bounding box of all routes, keeping only points within ~40 miles of a route. Spacing grows on long trips so we stay under ~120 points.

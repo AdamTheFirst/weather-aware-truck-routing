@@ -84,7 +84,7 @@ sort routes by (no_travel_miles, severe_miles, high_miles, avg_risk, duration)
 pick first
 ```
 
-> Notes: The brief's order is Severe miles, then High miles, then average risk, then time. No Travel is worse than Severe, so it ranks first. Average risk is compared with a tolerance of 0.25 (levels are 0–4, and this step only runs once the higher bands are tied). A smaller gap falls through to travel time. Via routes slower than 1.25× the fastest route are dropped before ranking.
+> Notes: The brief's order is Severe miles, then High miles, then average risk, then time. No Travel is worse than Severe, so it ranks first. Average risk is compared at 3 decimal places, so only floating-point noise ties and falls through to travel time. Via routes slower than 1.25× the fastest route are dropped before ranking.
 
 ## 6. Frontend
 

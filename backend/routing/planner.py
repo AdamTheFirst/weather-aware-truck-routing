@@ -7,7 +7,7 @@ from datetime import timedelta
 
 from . import clients
 from .geo import corridor_grid, dedupe_coords, haversine_mi, sample_checkpoints, segment_profile
-from .risk import AVG_RISK_TOLERANCE, LEVEL_NAMES, classify_checkpoint, recommend, summarize_route
+from .risk import LEVEL_NAMES, classify_checkpoint, recommend, summarize_route
 
 HEATMAP_HOURS = 48
 ROUTE_LABELS = "ABC"
@@ -160,7 +160,8 @@ def _explain(best, routes):
     for key, text in checks:
         if any(o["summary"]["miles_by_level"][key] > b[key] for o in others):
             return f"Route {best['id']} is recommended because {text}."
-    # Same tolerance as recommend(). A tenth of a point is not "lower risk".
-    if any(o["summary"]["avg_risk"] - best["summary"]["avg_risk"] >= AVG_RISK_TOLERANCE for o in others):
+    # Same 3-decimal comparison as ranking_key. A lower average wins even
+    # when the gap is small. Duration is only the reason when they match.
+    if any(round(o["summary"]["avg_risk"], 3) > round(best["summary"]["avg_risk"], 3) for o in others):
         return f"Route {best['id']} is recommended because it has the lowest average weather risk."
     return f"Route {best['id']} is recommended because weather risk is similar and it is the fastest."

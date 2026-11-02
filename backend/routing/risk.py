@@ -120,46 +120,26 @@ def summarize_route(checkpoints):
     }
 
 
-# Average risk is a distance-weighted mean of levels 0–4. By the time we
-# compare it, No Travel, Severe and High miles are already tied, so the only
-# thing left in the average is Low vs Moderate (plus a longer route diluting
-# the same bad miles). A gap below 0.25 is less than a quarter of the route
-# sitting one band worse, which is not worth extra hours. A gap of 0.25 or
-# more still prefers the calmer route. This is not 1-decimal rounding: 0.00
-# and 0.10 differ at one decimal, and that Denver case is dropped earlier by
-# the via-route duration cap.
-AVG_RISK_TOLERANCE = 0.25
-
-
 def ranking_key(route):
-    """Strict order from the brief, with No Travel in front.
+    """Spec order, with No Travel miles ahead of Severe.
 
-    Fewest No Travel miles, then Severe, then High, then average risk, then
-    time. `recommend` uses the first three fields as-is and applies
-    AVG_RISK_TOLERANCE to the average, because a tolerance depends on the
-    calmest route in the group and is not a per-route sort key.
+    Fewest No Travel miles, then Severe, then High, then lowest average
+    risk, then shortest time. Average risk is rounded to 3 decimals so
+    floating-point noise does not change the order. Nothing coarser: 0.096
+    still beats 0.100.
     """
     m = route["summary"]["miles_by_level"]
     return (
         m["no_travel"],
         m["severe"],
         m["high"],
-        route["summary"]["avg_risk"],
+        round(route["summary"]["avg_risk"], 3),
         route["duration_s"],
     )
 
 
 def recommend(routes):
-    """Pick the route a driver should take.
-
-    No Travel, Severe and High miles are compared exactly. Average risk is
-    then a tie unless the gap is at least AVG_RISK_TOLERANCE, in which case
-    the calmer route wins. Otherwise the shorter trip wins.
-    """
+    """Pick the route a driver should take, using `ranking_key` as written."""
     if not routes:
         return None
-    best_bands = min(ranking_key(r)[:3] for r in routes)
-    contenders = [r for r in routes if ranking_key(r)[:3] == best_bands]
-    calmest = min(r["summary"]["avg_risk"] for r in contenders)
-    close = [r for r in contenders if r["summary"]["avg_risk"] - calmest < AVG_RISK_TOLERANCE]
-    return min(close, key=lambda r: (r["duration_s"], r["summary"]["avg_risk"]))
+    return min(routes, key=ranking_key)
