@@ -15,6 +15,8 @@ WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./
+# Django warns on every request if STATIC_ROOT does not exist yet.
+RUN mkdir -p staticfiles
 COPY --from=web /web/dist /app/frontend/dist
 EXPOSE 8000
 # One worker so the in-process cache is shared. Threads cover the wait on
