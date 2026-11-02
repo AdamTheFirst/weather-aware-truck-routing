@@ -1,6 +1,6 @@
 import { Autocomplete, CircularProgress, TextField } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
-import { searchPlaces } from '../api';
+import { searchPhoton, searchPlaces } from '../api';
 import type { Place } from '../types';
 
 interface Props {
@@ -23,12 +23,14 @@ export default function PlaceInput({ label, value, onChange, placeholder }: Prop
   const [input, setInput] = useState('');
   const [options, setOptions] = useState<Place[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     // nothing to search for, or the text is just the picked place's label
     if (input.trim().length < 3 || (value && input === value.label)) {
       setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -36,12 +38,28 @@ export default function PlaceInput({ label, value, onChange, placeholder }: Prop
       abortRef.current?.abort();
       const ctrl = new AbortController();
       abortRef.current = ctrl;
+      const stillCurrent = () => abortRef.current === ctrl;
       try {
-        setOptions(await searchPlaces(input, ctrl.signal));
+        // Photon from this browser first. The server retries with Open-Meteo
+        // Geocoding when Photon refuses the host's address.
+        const places = await searchPhoton(input, ctrl.signal);
+        if (!stillCurrent()) return;
+        setOptions(places);
+        setError(null);
       } catch (e) {
-        if ((e as Error).name !== 'AbortError') setOptions([]);
+        if ((e as Error).name === 'AbortError') return;
+        try {
+          const places = await searchPlaces(input, ctrl.signal);
+          if (!stillCurrent()) return;
+          setOptions(places);
+          setError(null);
+        } catch (backup) {
+          if ((backup as Error).name === 'AbortError' || !stillCurrent()) return;
+          setOptions([]);
+          setError((backup as Error).message);
+        }
       } finally {
-        if (abortRef.current === ctrl) setLoading(false);
+        if (stillCurrent()) setLoading(false);
       }
     }, 300);
     return () => clearTimeout(timer);
@@ -59,12 +77,16 @@ export default function PlaceInput({ label, value, onChange, placeholder }: Prop
       isOptionEqualToValue={(a, b) => a.lon === b.lon && a.lat === b.lat}
       loading={loading}
       autoHighlight
-      noOptionsText={input.trim().length < 3 ? 'Type at least 3 letters' : 'No places found'}
+      noOptionsText={
+        error ?? (input.trim().length < 3 ? 'Type at least 3 letters' : 'No places found')
+      }
       renderInput={(params) => (
         <TextField
           {...params}
           label={label}
           placeholder={placeholder}
+          error={Boolean(error)}
+          helperText={error ?? undefined}
           slotProps={{
             input: {
               ...params.InputProps,

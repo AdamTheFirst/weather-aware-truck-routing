@@ -105,7 +105,7 @@ export default function MapView({ plan, selectedId, onSelect, hour, showHeatmap 
     <MapContainer center={US_CENTER} zoom={4} preferCanvas className="map" zoomControl={false}>
       <TileLayer
         // muted grey basemap so route and risk colours stand out
-        attribution="Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ"
+        attribution='Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ | Weather &copy; <a href="https://open-meteo.com/">Open-Meteo</a> and <a href="https://api.met.no/">MET Norway</a> (CC BY 4.0)'
         url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
         maxZoom={16}
       />
