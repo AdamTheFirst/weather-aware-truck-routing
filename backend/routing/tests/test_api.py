@@ -112,6 +112,13 @@ def test_upstream_failure_is_502(_routes, body):
     assert "OSRM" in resp.json()["error"]
 
 
+@mock.patch.object(clients, "geocode", side_effect=clients.UpstreamError("Place search is unavailable right now."))
+def test_geocode_failure_is_a_clear_502(_geocode):
+    resp = Client().get("/api/geocode", {"q": "Denver"})
+    assert resp.status_code == 502
+    assert "Place search is unavailable" in resp.json()["error"]
+
+
 def test_health_does_not_touch_upstream():
     resp = Client().get("/api/health")
     assert resp.status_code == 200

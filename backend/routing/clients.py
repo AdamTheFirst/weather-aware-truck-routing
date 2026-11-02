@@ -3,9 +3,16 @@
 All free and key-less, so the reviewer can run the project without signing
 up for anything:
 
-* Photon (komoot)  -> geocoding / autocomplete   https://photon.komoot.io
-* OSRM demo server -> routing                    https://project-osrm.org
-* Open-Meteo       -> hourly weather forecast    https://open-meteo.com
+* Photon (komoot)       -> geocoding / autocomplete   https://photon.komoot.io
+* Open-Meteo Geocoding  -> backup place search        https://open-meteo.com
+* OSRM demo server      -> routing                    https://project-osrm.org
+* Open-Meteo            -> hourly weather forecast    https://open-meteo.com
+* MET Norway            -> backup forecast            https://api.met.no
+
+Photon refuses some cloud addresses, and Open-Meteo's free daily limit is
+shared by everyone on a host like Render. Each primary call falls back to
+the other provider rather than failing the demo. Nominatim is not used:
+its policy forbids autocomplete, which is what the search box does.
 
 The base URLs come from settings so they can be swapped for a self-hosted or
 paid provider without touching the code.
@@ -13,7 +20,10 @@ paid provider without touching the code.
 import hashlib
 import json
 import logging
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta, timezone
 
 import requests
 from django.conf import settings
@@ -23,21 +33,44 @@ from .geo import METERS_PER_MILE, haversine_mi, offset_point
 
 log = logging.getLogger(__name__)
 
-HEADERS = {"User-Agent": "weather-aware-truck-routing (assessment project)"}
+# MET Norway blocks generic clients and asks for an app name plus a page
+# where they can reach the operator. The same agent is fine for the others.
+HEADERS = {
+    "User-Agent": (
+        "weather-aware-truck-routing/1.0 "
+        "(+https://github.com/AdamTheFirst/weather-aware-truck-routing)"
+    )
+}
 TIMEOUT = 20
+# MET Norway's terms cap an application at 20 requests/second and reject
+# coordinates with more than 4 decimal places. Stay well under the cap.
+MET_MAX_PER_SECOND = 8
+_met_lock = threading.Lock()
+_met_next = 0.0
 
 
 class UpstreamError(Exception):
     """Something outside our control failed (API down, rate limited, no route)."""
 
 
-def _get_json(url, params, cache_seconds=600):
+def _brief(exc):
+    """One short clause a driver can read, instead of a URL and a traceback."""
+    text = " ".join(str(exc).split())
+    lowered = text.lower()
+    if "429" in text or "limit" in lowered:
+        return "the daily request limit for this server is used up"
+    if "connection refused" in lowered or "errno 111" in lowered or "could not reach" in lowered:
+        return "the connection was refused"
+    return text[:140]
+
+
+def _get_json(url, params, cache_seconds=600, headers=None):
     key = "http:" + hashlib.sha1(json.dumps([url, params], sort_keys=True).encode()).hexdigest()
     hit = cache.get(key)
     if hit is not None:
         return hit
     try:
-        resp = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+        resp = requests.get(url, params=params, headers=headers or HEADERS, timeout=TIMEOUT)
     except requests.RequestException as exc:
         raise UpstreamError(f"Could not reach {url}: {exc}") from exc
     if resp.status_code != 200:
@@ -50,7 +83,12 @@ def _get_json(url, params, cache_seconds=600):
 # ---------------------------------------------------------------- geocoding
 
 
-def geocode(query, limit=5):
+def _place_label(parts):
+    # drop empties and repeats ("Dallas, Dallas, Texas")
+    return ", ".join(dict.fromkeys(x for x in parts if x))
+
+
+def _geocode_photon(query, limit):
     data = _get_json(
         f"{settings.PHOTON_URL}/api/",
         {"q": query, "limit": limit, "lang": "en"},
@@ -59,12 +97,50 @@ def geocode(query, limit=5):
     results = []
     for f in data.get("features", []):
         p = f["properties"]
-        parts = [p.get("name"), p.get("city"), p.get("state"), p.get("country")]
-        # drop empties and repeats ("Dallas, Dallas, Texas")
-        label = ", ".join(dict.fromkeys(x for x in parts if x))
         lon, lat = f["geometry"]["coordinates"]
-        results.append({"label": label, "lon": lon, "lat": lat})
+        results.append(
+            {
+                "label": _place_label([p.get("name"), p.get("city"), p.get("state"), p.get("country")]),
+                "lon": lon,
+                "lat": lat,
+            }
+        )
     return results
+
+
+def _geocode_open_meteo(query, limit):
+    """Backup search. A different host from the forecast API, and it allows search."""
+    data = _get_json(
+        settings.OPEN_METEO_GEOCODE_URL,
+        {"name": query, "count": limit, "language": "en", "format": "json"},
+        cache_seconds=86400,
+    )
+    results = []
+    for r in data.get("results") or []:
+        results.append(
+            {
+                "label": _place_label([r.get("name"), r.get("admin1"), r.get("country")]),
+                "lon": r["longitude"],
+                "lat": r["latitude"],
+            }
+        )
+    return results
+
+
+def geocode(query, limit=5):
+    """Place search. Photon first; Open-Meteo Geocoding if Photon cannot be reached."""
+    try:
+        return _geocode_photon(query, limit)
+    except UpstreamError as primary:
+        log.warning("Photon geocoding failed: %s", primary)
+        try:
+            return _geocode_open_meteo(query, limit)
+        except UpstreamError as backup:
+            log.warning("Open-Meteo geocoding failed: %s", backup)
+            raise UpstreamError(
+                "Place search is unavailable right now. "
+                f"Photon: {_brief(primary)}. Backup geocoder: {_brief(backup)}."
+            ) from backup
 
 
 # ---------------------------------------------------------------- routing
@@ -193,13 +269,7 @@ def _fetch_weather_chunk(points, start_hour, end_hour):
     return data if isinstance(data, list) else [data]
 
 
-def get_hourly_weather(points, start, end):
-    """Hourly weather for many points between two UTC datetimes.
-
-    Returns a list (same order as `points`) of dicts:
-        {"times": [...iso...], "wind_mph": [...], "gust_mph": [...],
-         "rain_in": [...], "snow_in": [...]}
-    """
+def _open_meteo_weather(points, start, end):
     start_hour = start.strftime("%Y-%m-%dT%H:00")
     end_hour = end.strftime("%Y-%m-%dT%H:00")
     chunks = [points[i : i + CHUNK] for i in range(0, len(points), CHUNK)]
@@ -226,6 +296,167 @@ def get_hourly_weather(points, start, end):
     if len(out) != len(points):
         raise UpstreamError("Weather service returned an unexpected number of locations")
     return out
+
+
+def _pace_met():
+    """Space MET Norway calls out so one plan cannot burst past their limit."""
+    global _met_next
+    with _met_lock:
+        now = time.monotonic()
+        wait = _met_next - now
+        _met_next = max(now, _met_next) + (1 / MET_MAX_PER_SECOND)
+    if wait > 0:
+        time.sleep(wait)
+
+
+def met_precip_inches(mm, symbol, temp_c):
+    """Turn MET Norway's millimetres of water into the inches the risk table uses.
+
+    `precipitation_amount` is liquid water, not snow depth. Rain is that
+    water in inches. Snow depth is about ten times the water (a 10:1 ratio)
+    when the symbol, or a temperature at or below freezing, says it is snow.
+    Sleet counts as both, and the risk rules keep the worse of the two.
+    """
+    water_in = (mm or 0.0) / 25.4
+    code = (symbol or "").lower()
+    snow = "snow" in code
+    sleet = "sleet" in code
+    if not snow and not sleet and temp_c is not None and temp_c <= 0 and water_in > 0 and "rain" not in code:
+        snow = True
+    if sleet:
+        return water_in * 0.5, water_in * 5
+    if snow:
+        return 0.0, water_in * 10
+    return water_in, 0.0
+
+
+def _utc_hour(when):
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return when.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+
+def met_timeseries_to_hourly(payload, start, end):
+    """One MET Norway location payload -> the same hourly dict Open-Meteo produces.
+
+    The compact feed is hourly for about two days and then every six hours.
+    Hours that fall inside a six-hour step reuse that step, and its
+    precipitation is spread across the six hours so the rate stays per hour.
+    """
+    try:
+        series = payload["properties"]["timeseries"]
+    except (KeyError, TypeError) as exc:
+        raise UpstreamError("MET Norway returned an unexpected forecast") from exc
+    rows = []
+    for entry in series:
+        when = _utc_hour(_parse_met_time(entry["time"]))
+        data = entry.get("data") or {}
+        instant = (data.get("instant") or {}).get("details") or {}
+        next_1 = data.get("next_1_hours") or {}
+        next_6 = data.get("next_6_hours") or {}
+        symbol = ((next_1.get("summary") or next_6.get("summary") or {}).get("symbol_code"))
+        mm_1 = (next_1.get("details") or {}).get("precipitation_amount")
+        mm_6 = (next_6.get("details") or {}).get("precipitation_amount")
+        if mm_1 is not None:
+            mm = mm_1
+        elif mm_6 is not None:
+            mm = mm_6 / 6.0
+        else:
+            mm = 0.0
+        rows.append(
+            {
+                "time": when,
+                "wind": instant.get("wind_speed") or 0.0,
+                "gust": instant.get("wind_speed_of_gust"),
+                "temp": instant.get("air_temperature"),
+                "symbol": symbol,
+                "mm": mm,
+            }
+        )
+    if not rows:
+        raise UpstreamError("MET Norway returned no forecast times")
+    rows.sort(key=lambda row: row["time"])
+
+    start_hour = _utc_hour(start)
+    end_hour = _utc_hour(end)
+    times, wind, gust, rain, snow = [], [], [], [], []
+    hour = start_hour
+    mps_to_mph = 2.2369362920544
+    while hour <= end_hour:
+        row = _row_at(rows, hour)
+        rain_in, snow_in = met_precip_inches(row["mm"], row["symbol"], row["temp"])
+        gust_mps = row["wind"] if row["gust"] is None else row["gust"]
+        times.append(hour.strftime("%Y-%m-%dT%H:00"))
+        wind.append(row["wind"] * mps_to_mph)
+        gust.append(gust_mps * mps_to_mph)
+        rain.append(rain_in)
+        snow.append(snow_in)
+        hour += timedelta(hours=1)
+    return {
+        "times": times,
+        "wind_mph": wind,
+        "gust_mph": gust,
+        "rain_in": rain,
+        "snow_in": snow,
+    }
+
+
+def _parse_met_time(value):
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _row_at(rows, hour):
+    chosen = rows[0]
+    for row in rows:
+        if row["time"] <= hour:
+            chosen = row
+        else:
+            break
+    return chosen
+
+
+def _fetch_met_point(point, start, end):
+    lon, lat = point
+    _pace_met()
+    # 5+ decimal places are rejected with 403. Four is the precision they ask for.
+    data = _get_json(
+        settings.MET_NORWAY_URL,
+        {"lat": f"{round(lat, 4):.4f}", "lon": f"{round(lon, 4):.4f}"},
+        cache_seconds=WEATHER_CACHE_SECONDS,
+    )
+    return met_timeseries_to_hourly(data, start, end)
+
+
+def _met_norway_weather(points, start, end):
+    # A handful of calls in flight, and _pace_met keeps the rate near 8/s.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        return list(pool.map(lambda point: _fetch_met_point(point, start, end), points))
+
+
+def get_hourly_weather(points, start, end):
+    """Hourly weather for many points between two UTC datetimes.
+
+    Returns a list (same order as `points`) of dicts:
+        {"times": [...iso...], "wind_mph": [...], "gust_mph": [...],
+         "rain_in": [...], "snow_in": [...]}
+
+    Open-Meteo is asked first because one call covers many locations.
+    MET Norway is the backup when that call is refused or rate-limited.
+    """
+    if not points:
+        return []
+    try:
+        return _open_meteo_weather(points, start, end)
+    except UpstreamError as primary:
+        log.warning("Open-Meteo forecast failed: %s", primary)
+        try:
+            return _met_norway_weather(points, start, end)
+        except UpstreamError as backup:
+            log.warning("MET Norway forecast failed: %s", backup)
+            raise UpstreamError(
+                "Weather data is unavailable right now. "
+                f"Open-Meteo: {_brief(primary)}. Backup forecast: {_brief(backup)}."
+            ) from backup
 
 
 def _clean(values):
