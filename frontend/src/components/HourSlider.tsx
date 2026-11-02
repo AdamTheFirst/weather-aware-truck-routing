@@ -1,3 +1,6 @@
+import PauseIcon from '@mui/icons-material/Pause';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
+import { Box, FormControlLabel, IconButton, Paper, Slider, Stack, Switch, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { LEVEL_COLORS, LEVEL_LABELS, LEVEL_ORDER, formatTime } from '../format';
 
@@ -23,47 +26,68 @@ export default function HourSlider({ departure, hour, max, onChange, showHeatmap
   const at = new Date(new Date(departure).getTime() + hour * 3600_000).toISOString();
 
   return (
-    <div className="hour-slider">
-      <div className="slider-row">
-        <button
-          className="play"
+    <Paper
+      elevation={4}
+      sx={{
+        position: 'absolute',
+        left: 16,
+        right: 16,
+        bottom: 24,
+        zIndex: 1000,
+        maxWidth: 720,
+        mx: 'auto',
+        px: 2,
+        py: 1.25,
+      }}
+    >
+      <Stack direction="row" alignItems="center" spacing={2}>
+        <IconButton
+          color="primary"
           onClick={() => setPlaying((p) => !p)}
-          aria-label={playing ? 'Pause' : 'Play forecast'}
-          title={playing ? 'Pause' : 'Play forecast'}
+          aria-label={playing ? 'Pause forecast' : 'Play forecast'}
+          sx={{ bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.dark' } }}
+          size="small"
         >
-          {playing ? '❚❚' : '▶'}
-        </button>
-        <input
-          type="range"
+          {playing ? <PauseIcon /> : <PlayArrowIcon />}
+        </IconButton>
+        <Slider
+          value={hour}
           min={0}
           max={max}
           step={1}
-          value={hour}
-          onChange={(e) => {
+          marks={[0, 12, 24, 36, 48].map((v) => ({ value: v }))}
+          onChange={(_, v) => {
             setPlaying(false);
-            onChange(Number(e.target.value));
+            onChange(v as number);
           }}
+          valueLabelDisplay="auto"
+          valueLabelFormat={(v) => `+${v} h`}
           aria-label="Forecast hour"
         />
-        <div className="slider-label">
-          <strong>+{hour} h</strong>
-          <span>{formatTime(at)}</span>
-        </div>
-      </div>
-      <div className="legend-row">
-        <label className="toggle">
-          <input type="checkbox" checked={showHeatmap} onChange={(e) => onToggleHeatmap(e.target.checked)} />
-          Heatmap
-        </label>
-        <div className="legend">
+        <Box sx={{ minWidth: 104, textAlign: 'right' }}>
+          <Typography variant="body2" fontWeight={700}>
+            +{hour} h
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {formatTime(at)}
+          </Typography>
+        </Box>
+      </Stack>
+
+      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" useFlexGap spacing={1}>
+        <FormControlLabel
+          control={<Switch size="small" checked={showHeatmap} onChange={(e) => onToggleHeatmap(e.target.checked)} />}
+          label={<Typography variant="caption">Heatmap</Typography>}
+        />
+        <Stack direction="row" spacing={1.5} flexWrap="wrap" useFlexGap>
           {LEVEL_ORDER.map((l) => (
-            <span key={l}>
-              <i style={{ background: LEVEL_COLORS[l] }} />
-              {LEVEL_LABELS[l]}
-            </span>
+            <Stack key={l} direction="row" alignItems="center" spacing={0.5}>
+              <Box sx={{ width: 10, height: 10, borderRadius: 0.5, bgcolor: LEVEL_COLORS[l] }} />
+              <Typography variant="caption">{LEVEL_LABELS[l]}</Typography>
+            </Stack>
           ))}
-        </div>
-      </div>
-    </div>
+        </Stack>
+      </Stack>
+    </Paper>
   );
 }

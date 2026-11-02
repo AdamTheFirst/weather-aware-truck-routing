@@ -1,3 +1,4 @@
+import { Box, Chip, Stack, Typography } from '@mui/material';
 import L from 'leaflet';
 import { useEffect, useMemo } from 'react';
 import { CircleMarker, MapContainer, Marker, Polyline, Popup, TileLayer, Tooltip, useMap } from 'react-leaflet';
@@ -53,38 +54,38 @@ function truckPosition(route: Route, departure: string, hour: number): [number, 
 
 function CheckpointPopup({ cp, routeId }: { cp: Checkpoint; routeId: string }) {
   const { weather: w, risk } = cp;
+  const rows: [string, string][] = [
+    ['Wind', `${w.wind_mph} mph (gusts ${w.gust_mph})`],
+    ['Rain', `${w.rain_in} in/hr`],
+    ['Snow', `${w.snow_in} in/hr`],
+  ];
   return (
-    <div className="cp-popup">
-      <div className="cp-title">
+    <Box sx={{ minWidth: 190 }}>
+      <Typography variant="subtitle2" fontWeight={700}>
         Route {routeId} · mile {Math.round(cp.mile)}
-      </div>
-      <div>
+      </Typography>
+      <Typography variant="body2">
         ETA <strong>{formatTime(cp.eta)}</strong>
-      </div>
-      <div className="cp-risk" style={{ background: LEVEL_COLORS[risk.label] }}>
-        {LEVEL_LABELS[risk.label]}
-        {risk.driver && ` · ${risk.driver}`}
-      </div>
-      <table>
-        <tbody>
-          <tr>
-            <td>Wind</td>
-            <td>
-              {w.wind_mph} mph <span className="muted">(gusts {w.gust_mph})</span>
-            </td>
-          </tr>
-          <tr>
-            <td>Rain</td>
-            <td>{w.rain_in} in/hr</td>
-          </tr>
-          <tr>
-            <td>Snow</td>
-            <td>{w.snow_in} in/hr</td>
-          </tr>
-        </tbody>
-      </table>
-      {risk.load_rule && <div className="cp-note">Load rule: {risk.load_rule}</div>}
-    </div>
+      </Typography>
+      <Chip
+        size="small"
+        label={`${LEVEL_LABELS[risk.label]}${risk.driver ? ` · ${risk.driver}` : ''}`}
+        sx={{ my: 0.75, bgcolor: LEVEL_COLORS[risk.label], color: '#fff', fontWeight: 600 }}
+      />
+      {rows.map(([k, v]) => (
+        <Stack key={k} direction="row" spacing={1}>
+          <Typography variant="body2" color="text.secondary" sx={{ width: 40 }}>
+            {k}
+          </Typography>
+          <Typography variant="body2">{v}</Typography>
+        </Stack>
+      ))}
+      {risk.load_rule && (
+        <Typography variant="caption" color="error" component="div" sx={{ mt: 0.75 }}>
+          Load rule: {risk.load_rule}
+        </Typography>
+      )}
+    </Box>
   );
 }
 

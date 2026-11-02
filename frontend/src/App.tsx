@@ -1,3 +1,4 @@
+import { Alert, Box, Chip, CircularProgress, Typography } from '@mui/material';
 import { useCallback, useRef, useState } from 'react';
 import { planTrip } from './api';
 import HourSlider from './components/HourSlider';
@@ -38,25 +39,64 @@ export default function App() {
   const onHour = useCallback((h: number) => setHour(h), []);
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <header>
-          <h1>Weather-Aware Truck Routing</h1>
-          <p className="muted">Compare routes by forecast weather at the time you'll actually be there.</p>
-        </header>
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: { xs: '1fr', md: '400px 1fr' },
+        gridTemplateRows: { xs: 'auto 70vh', md: '1fr' },
+        height: { md: '100vh' },
+      }}
+    >
+      <Box
+        component="aside"
+        sx={{
+          bgcolor: 'background.paper',
+          borderRight: { md: 1 },
+          borderBottom: { xs: 1, md: 0 },
+          borderColor: 'divider',
+          p: 2.5,
+          overflowY: 'auto',
+        }}
+      >
+        <Typography variant="h1" gutterBottom>
+          Weather-Aware Truck Routing
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+          Compare routes by forecast weather at the time you'll actually be there.
+        </Typography>
+
         <TripForm loading={loading} onSubmit={submit} />
-        {error && <div className="error">{error}</div>}
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
         {plan && <RouteList plan={plan} selectedId={selectedId} onSelect={setSelectedId} />}
         {!plan && !loading && (
-          <div className="empty muted">
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 3 }}>
             Enter a trip to see three route options, weather checkpoints and a 48-hour risk heatmap.
-          </div>
+          </Typography>
         )}
-      </aside>
+      </Box>
 
-      <main className="map-wrap">
+      <Box component="main" sx={{ position: 'relative' }}>
         <MapView plan={plan} selectedId={selectedId} onSelect={setSelectedId} hour={hour} showHeatmap={showHeatmap} />
-        {loading && <div className="map-loading">Fetching routes and forecasts…</div>}
+        {loading && (
+          <Chip
+            icon={<CircularProgress size={14} />}
+            label="Fetching routes and forecasts…"
+            sx={{
+              position: 'absolute',
+              top: 16,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 1000,
+              bgcolor: 'background.paper',
+              boxShadow: 3,
+            }}
+          />
+        )}
         {plan && (
           <HourSlider
             departure={plan.departure}
@@ -67,7 +107,7 @@ export default function App() {
             onToggleHeatmap={setShowHeatmap}
           />
         )}
-      </main>
-    </div>
+      </Box>
+    </Box>
   );
 }

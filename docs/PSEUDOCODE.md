@@ -108,4 +108,3 @@ sidebar:
 - Trip longer than 48 h -> fetch weather for the whole trip, not just 48 h
 - Last stretch shorter than the interval -> still add the destination checkpoint
 - Missing (null) hours from the weather API -> treated as calm/dry
-- _TODO: add any you think of_

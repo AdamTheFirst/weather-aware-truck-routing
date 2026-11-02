@@ -46,10 +46,11 @@ cd backend && .venv/bin/pytest
 ## Architecture
 
 ```
-frontend/ (React + TypeScript + Vite + Leaflet)
+frontend/ (React + TypeScript + Vite + Material UI + Leaflet)
+  theme.ts                 MUI theme: colours, radius, type scale, component defaults
   App.tsx                  page state: plan, selected route, slider hour
   components/TripForm      inputs + validation
-  components/PlaceInput    debounced autocomplete
+  components/PlaceInput    MUI Autocomplete with debounced server search
   components/RouteList     route cards + recommendation reason
   components/MapView       routes, checkpoints, popups, truck marker
   components/HeatmapLayer  custom canvas layer for the risk heatmap

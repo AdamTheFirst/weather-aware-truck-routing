@@ -1,3 +1,17 @@
+import SwapVertIcon from '@mui/icons-material/SwapVert';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  IconButton,
+  InputAdornment,
+  Stack,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import { useState } from 'react';
 import { toLocalInputValue } from '../format';
 import type { Place, PlanRequest } from '../types';
@@ -42,53 +56,87 @@ export default function TripForm({ loading, onSubmit }: Props) {
   };
 
   return (
-    <form className="trip-form" onSubmit={submit}>
-      <PlaceInput label="From" value={origin} onChange={setOrigin} placeholder="e.g. Denver, CO" />
-      <button type="button" className="swap" onClick={swap} title="Swap origin and destination" aria-label="Swap">
-        ⇅
-      </button>
-      <PlaceInput label="To" value={destination} onChange={setDestination} placeholder="e.g. Salt Lake City, UT" />
+    <Stack component="form" spacing={2} onSubmit={submit}>
+      <Box sx={{ position: 'relative' }}>
+        <Stack spacing={1.5}>
+          <PlaceInput label="From" value={origin} onChange={setOrigin} placeholder="e.g. Denver, CO" />
+          <PlaceInput label="To" value={destination} onChange={setDestination} placeholder="e.g. Salt Lake City, UT" />
+        </Stack>
+        <Tooltip title="Swap origin and destination">
+          <IconButton
+            onClick={swap}
+            size="small"
+            aria-label="Swap origin and destination"
+            sx={{
+              position: 'absolute',
+              right: -14,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              bgcolor: 'background.paper',
+              border: 1,
+              borderColor: 'divider',
+              zIndex: 1,
+              '&:hover': { bgcolor: 'grey.100' },
+            }}
+          >
+            <SwapVertIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
-      <div className="row">
-        <label className="field">
-          <span className="field-label">Departure</span>
-          <input type="datetime-local" value={departure} onChange={(e) => setDeparture(e.target.value)} required />
-        </label>
-        <label className="field">
-          <span className="field-label">Load (lb)</span>
-          <input
-            type="number"
-            min={0}
-            max={120000}
-            step={500}
-            value={load}
-            onChange={(e) => setLoad(e.target.value)}
-            required
-          />
-        </label>
-      </div>
+      <Stack direction="row" spacing={1.5}>
+        <TextField
+          label="Departure"
+          type="datetime-local"
+          value={departure}
+          onChange={(e) => setDeparture(e.target.value)}
+          required
+          slotProps={{ inputLabel: { shrink: true } }}
+        />
+        <TextField
+          label="Load"
+          type="number"
+          value={load}
+          onChange={(e) => setLoad(e.target.value)}
+          required
+          sx={{ maxWidth: 150 }}
+          slotProps={{
+            htmlInput: { min: 0, max: 120000, step: 500 },
+            input: { endAdornment: <InputAdornment position="end">lb</InputAdornment> },
+          }}
+        />
+      </Stack>
 
-      <div className="field">
-        <span className="field-label">Check weather every</span>
-        <div className="segmented" role="radiogroup">
+      <Box>
+        <Typography variant="overline" color="text.secondary" component="div">
+          Check weather every
+        </Typography>
+        <ToggleButtonGroup
+          value={interval}
+          exclusive
+          fullWidth
+          size="small"
+          color="primary"
+          onChange={(_, v) => v && setIntervalMi(v)}
+          aria-label="Checkpoint interval"
+        >
           {([10, 25, 50] as const).map((n) => (
-            <button
-              key={n}
-              type="button"
-              role="radio"
-              aria-checked={interval === n}
-              className={interval === n ? 'on' : ''}
-              onClick={() => setIntervalMi(n)}
-            >
+            <ToggleButton key={n} value={n}>
               {n} mi
-            </button>
+            </ToggleButton>
           ))}
-        </div>
-      </div>
+        </ToggleButtonGroup>
+      </Box>
 
-      <button type="submit" className="primary" disabled={!canSubmit}>
+      <Button
+        type="submit"
+        variant="contained"
+        size="large"
+        disabled={!canSubmit}
+        startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
+      >
         {loading ? 'Checking routes & weather…' : 'Find safest route'}
-      </button>
-    </form>
+      </Button>
+    </Stack>
   );
 }
