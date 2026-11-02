@@ -84,13 +84,20 @@ export default function TripForm({ loading, onSubmit }: Props) {
         </Tooltip>
       </Box>
 
-      <Stack direction="row" spacing={1.5}>
+      <Stack direction="row" spacing={1.5} alignItems="flex-start">
         <TextField
-          label="Departure"
+          label="Departure (your local time)"
           type="datetime-local"
           value={departure}
           onChange={(e) => setDeparture(e.target.value)}
           required
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            // The shrunk outline label ellipsizes once it is longer than the notch.
+            // This string is the field's name, so keep the whole thing visible.
+            '& .MuiInputLabel-shrink': { maxWidth: 'none', overflow: 'visible', textOverflow: 'unset' },
+          }}
           slotProps={{ inputLabel: { shrink: true } }}
         />
         <TextField
@@ -99,7 +106,7 @@ export default function TripForm({ loading, onSubmit }: Props) {
           value={load}
           onChange={(e) => setLoad(e.target.value)}
           required
-          sx={{ maxWidth: 150 }}
+          sx={{ width: 132, flexShrink: 0 }}
           slotProps={{
             htmlInput: { min: 0, max: 120000, step: 500 },
             input: { endAdornment: <InputAdornment position="end">lb</InputAdornment> },

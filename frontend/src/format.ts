@@ -35,6 +35,7 @@ export function formatTime(iso: string): string {
     weekday: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    timeZoneName: 'short',
   });
 }
 

@@ -42,7 +42,7 @@ export default function App() {
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: '400px 1fr' },
+        gridTemplateColumns: { xs: '1fr', md: '460px 1fr' },
         gridTemplateRows: { xs: 'auto 70vh', md: '1fr' },
         height: { md: '100vh' },
       }}

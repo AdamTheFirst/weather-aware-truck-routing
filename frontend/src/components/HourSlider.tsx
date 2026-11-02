@@ -64,7 +64,7 @@ export default function HourSlider({ departure, hour, max, onChange, showHeatmap
           valueLabelFormat={(v) => `+${v} h`}
           aria-label="Forecast hour"
         />
-        <Box sx={{ minWidth: 104, textAlign: 'right' }}>
+        <Box sx={{ minWidth: 148, textAlign: 'right', flexShrink: 0 }}>
           <Typography variant="body2" fontWeight={700}>
             +{hour} h
           </Typography>
