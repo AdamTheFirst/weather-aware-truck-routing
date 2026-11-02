@@ -28,11 +28,36 @@ function RiskBar({ route }: { route: Route }) {
   );
 }
 
+function recommendationBanner(plan: Plan): {
+  severity: 'success' | 'warning' | 'error';
+  text: string;
+} {
+  const best = plan.routes.find((r) => r.id === plan.recommended_id);
+  const miles = best?.summary.miles_by_level;
+  if (!plan.safe && miles && miles.no_travel > 0) {
+    return {
+      severity: 'error',
+      text: `No route is safe at this departure; the best option still has No Travel miles. Consider leaving later. ${plan.recommendation_reason}`,
+    };
+  }
+  if (!plan.safe && miles && miles.severe > 0) {
+    return {
+      severity: 'warning',
+      text: `The best route still has Severe miles. ${plan.recommendation_reason}`,
+    };
+  }
+  return { severity: 'success', text: plan.recommendation_reason };
+}
+
 export default function RouteList({ plan, selectedId, onSelect }: Props) {
+  const banner = recommendationBanner(plan);
   return (
     <Stack spacing={1.25} sx={{ mt: 2.5 }}>
-      <Alert severity="success" icon={<CheckCircleIcon fontSize="inherit" />}>
-        {plan.recommendation_reason}
+      <Alert
+        severity={banner.severity}
+        icon={banner.severity === 'success' ? <CheckCircleIcon fontSize="inherit" /> : undefined}
+      >
+        {banner.text}
       </Alert>
 
       {plan.routes.map((r) => {
@@ -54,7 +79,15 @@ export default function RouteList({ plan, selectedId, onSelect }: Props) {
               <CardContent sx={{ py: 1.5, '&:last-child': { pb: 1.5 } }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Typography fontWeight={700}>Route {r.id}</Typography>
-                  {r.id === plan.recommended_id && <Chip label="Recommended" color="success" size="small" />}
+                  {r.id === plan.recommended_id && (
+                    <Chip
+                      label="Recommended"
+                      size="small"
+                      color={
+                        !plan.safe && m.no_travel > 0 ? 'error' : !plan.safe && m.severe > 0 ? 'warning' : 'success'
+                      }
+                    />
+                  )}
                 </Stack>
                 {r.via && (
                   <Typography variant="body2" color="text.secondary" noWrap title={r.via}>

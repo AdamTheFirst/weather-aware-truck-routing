@@ -58,6 +58,8 @@ export interface Plan {
   routes: Route[];
   recommended_id: string;
   recommendation_reason: string;
+  // False when that route still has No Travel or Severe miles.
+  safe: boolean;
   heatmap: Heatmap;
 }
 
