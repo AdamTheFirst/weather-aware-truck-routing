@@ -1,8 +1,12 @@
+# Render Blueprint: one Docker web service on the free plan.
+# https://render.com/docs/blueprint-spec
 services:
   - type: web
     name: truck-routing
     runtime: docker
+    dockerfilePath: ./Dockerfile
     plan: free
+    healthCheckPath: /api/health
     envVars:
       - key: DJANGO_SECRET_KEY
         generateValue: true

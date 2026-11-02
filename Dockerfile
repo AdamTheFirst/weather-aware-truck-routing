@@ -17,5 +17,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/ ./
 COPY --from=web /web/dist /app/frontend/dist
 EXPOSE 8000
-# 2 workers x 4 threads: requests are mostly waiting on the weather API
-CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 2 --threads 4 --timeout 60
+# One worker so the in-process cache is shared. Threads cover the wait on
+# the weather and routing APIs. $PORT is set by Render; 8000 is the local default.
+CMD gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 8 --timeout 60
