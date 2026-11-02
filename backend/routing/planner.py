@@ -6,8 +6,8 @@ rules (risk.py / geo.py). Views call `plan_trip` and return what it gives.
 from datetime import timedelta
 
 from . import clients
-from .geo import corridor_grid, haversine_mi, sample_checkpoints, segment_profile
-from .risk import LEVEL_NAMES, classify_checkpoint, recommend, summarize_route
+from .geo import corridor_grid, dedupe_coords, haversine_mi, sample_checkpoints, segment_profile
+from .risk import AVG_RISK_TOLERANCE, LEVEL_NAMES, classify_checkpoint, recommend, summarize_route
 
 HEATMAP_HOURS = 48
 ROUTE_LABELS = "ABC"
@@ -59,7 +59,12 @@ def plan_trip(origin, destination, departure, load_lb, interval_mi):
     start = departure.replace(minute=0, second=0, microsecond=0)
     end = start + timedelta(seconds=max(HEATMAP_HOURS * 3600, longest_s + 3600))
 
-    weather = clients.get_hourly_weather(cp_points + grid, start, end)
+    # Routes that share a road, and grid cells on top of a checkpoint, would
+    # otherwise be separate Open-Meteo locations. 0.05° is about 3 miles,
+    # finer than the forecast grid, so the weather a driver sees doesn't change.
+    unique_points, point_index = dedupe_coords(cp_points + grid, step_deg=0.05)
+    weather_unique = clients.get_hourly_weather(unique_points, start, end)
+    weather = [weather_unique[i] for i in point_index]
     cp_weather, grid_weather = weather[: len(cp_points)], weather[len(cp_points) :]
 
     # 3. classify each checkpoint at the hour the truck gets there
@@ -70,22 +75,31 @@ def plan_trip(origin, destination, departure, load_lb, interval_mi):
             i += 1
             eta = departure + timedelta(seconds=cp["offset_s"])
             h = _hour_index(w["times"], eta)
-            obs = {
-                "wind_mph": round(w["wind_mph"][h], 1),
-                "gust_mph": round(w["gust_mph"][h], 1),
-                "rain_in": round(w["rain_in"][h], 3),
-                "snow_in": round(w["snow_in"][h], 3),
-            }
+            # Classify the raw forecast. Rounding first moves a boundary the
+            # wrong way: 34.96 mph is Moderate, but round(34.96, 1) is 35.0
+            # and that is High. The popup still shows the rounded numbers.
+            raw_wind = w["wind_mph"][h]
+            raw_rain = w["rain_in"][h]
+            raw_snow = w["snow_in"][h]
             cp["eta"] = eta.isoformat()
             cp["mile"] = round(cp["mile"], 1)
             cp["lon"] = round(cp["lon"], 5)
             cp["lat"] = round(cp["lat"], 5)
-            cp["weather"] = obs
-            cp["risk"] = classify_checkpoint(obs["wind_mph"], obs["rain_in"], obs["snow_in"], load_lb)
+            cp["weather"] = {
+                "wind_mph": round(raw_wind, 1),
+                "gust_mph": round(w["gust_mph"][h], 1),
+                "rain_in": round(raw_rain, 3),
+                "snow_in": round(raw_snow, 3),
+            }
+            cp["risk"] = classify_checkpoint(raw_wind, raw_rain, raw_snow, load_lb)
             del cp["offset_s"]
         r["summary"] = summarize_route(r["checkpoints"])
 
     best = recommend(routes)
+    best_miles = best["summary"]["miles_by_level"]
+    # False when the winner itself still crosses No Travel or Severe weather.
+    # The UI uses this to warn instead of showing a green "all clear".
+    safe = best_miles["no_travel"] == 0 and best_miles["severe"] == 0
 
     # 4. heatmap: risk level for every grid point at every hour 0..48 from
     #    departure. Sent as small ints so the slider can scrub client-side
@@ -107,6 +121,7 @@ def plan_trip(origin, destination, departure, load_lb, interval_mi):
         "routes": routes,
         "recommended_id": best["id"],
         "recommendation_reason": _explain(best, routes),
+        "safe": safe,
         "heatmap": {
             "hours": HEATMAP_HOURS,
             "step_deg": grid_step,
@@ -145,6 +160,7 @@ def _explain(best, routes):
     for key, text in checks:
         if any(o["summary"]["miles_by_level"][key] > b[key] for o in others):
             return f"Route {best['id']} is recommended because {text}."
-    if any(o["summary"]["avg_risk"] > best["summary"]["avg_risk"] for o in others):
+    # Same tolerance as recommend(). A tenth of a point is not "lower risk".
+    if any(o["summary"]["avg_risk"] - best["summary"]["avg_risk"] >= AVG_RISK_TOLERANCE for o in others):
         return f"Route {best['id']} is recommended because it has the lowest average weather risk."
     return f"Route {best['id']} is recommended because weather risk is similar and it is the fastest."

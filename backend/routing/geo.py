@@ -88,7 +88,31 @@ def bbox(coord_lists, pad_deg=0.3):
     return (min(lons) - pad_deg, min(lats) - pad_deg, max(lons) + pad_deg, max(lats) + pad_deg)
 
 
-def corridor_grid(coord_lists, max_points=220, near_mi=40):
+def dedupe_coords(points, step_deg=0.05):
+    """Collapse points that fall in the same `step_deg` cell.
+
+    Returns `(unique, indexes)`. `indexes[i]` is the position in `unique`
+    for `points[i]`. The coordinate we keep is the first one seen in that
+    cell, so a checkpoint stays on the road instead of snapping to the cell centre.
+    """
+    unique = []
+    indexes = []
+    seen = {}
+    for lon, lat in points:
+        key = (
+            round(round(lon / step_deg) * step_deg, 5),
+            round(round(lat / step_deg) * step_deg, 5),
+        )
+        slot = seen.get(key)
+        if slot is None:
+            slot = len(unique)
+            seen[key] = slot
+            unique.append((lon, lat))
+        indexes.append(slot)
+    return unique, indexes
+
+
+def corridor_grid(coord_lists, max_points=120, near_mi=40):
     """Grid of points covering the area around all routes, for the heatmap.
 
     We lay a regular grid over the bounding box and keep only cells within

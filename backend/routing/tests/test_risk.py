@@ -154,6 +154,23 @@ class TestRecommend:
         routes = [_route("a", duration=5000), _route("b", duration=4000)]
         assert recommend(routes)["id"] == "b"
 
+    def test_near_equal_avg_risk_falls_through_to_time(self):
+        # Gap of 0.10 is below the 0.25 tolerance, so the shorter trip wins
+        # even though its average is a tenth higher.
+        routes = [
+            _route("A", avg=0.10, duration=9 * 3600),
+            _route("C", avg=0.00, duration=13 * 3600),
+        ]
+        assert recommend(routes)["id"] == "A"
+
+    def test_avg_risk_gap_at_the_tolerance_still_prefers_the_calmer_route(self):
+        # The tolerance is strict: a gap of 0.25 is not "below" it.
+        routes = [
+            _route("A", avg=0.25, duration=5 * 3600),
+            _route("B", avg=0.00, duration=12 * 3600),
+        ]
+        assert recommend(routes)["id"] == "B"
+
     def test_no_travel_beats_everything(self):
         # A route that crosses a No Travel zone should never be recommended
         # over one that does not, even if it is "only" a mile of it.
@@ -162,3 +179,11 @@ class TestRecommend:
 
     def test_empty(self):
         assert recommend([]) is None
+
+
+def test_near_tie_reason_says_the_route_is_fastest():
+    from routing.planner import _explain
+
+    fast = _route("A", avg=0.10, duration=9 * 3600)
+    slow = _route("C", avg=0.00, duration=13 * 3600)
+    assert "fastest" in _explain(fast, [fast, slow])

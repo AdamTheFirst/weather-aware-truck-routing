@@ -35,6 +35,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 # No models, but Django wants something here.
 DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
 
+# LocMemCache is per process. gunicorn runs as one worker so every request
+# shares these entries; a second worker would miss about half of them.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "TIMEOUT": 600}}
 
 TEMPLATES = []

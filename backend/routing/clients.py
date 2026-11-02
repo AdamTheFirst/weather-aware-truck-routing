@@ -115,15 +115,24 @@ def _is_duplicate(candidate, existing):
     return False
 
 
+# Via-point detours slower than this are not real alternatives. 1.25× the
+# fastest route drops the Denver–Salt Lake City case (13.27 h / 8.98 h ≈ 1.48)
+# while keeping a route that is only a bit slower. Distance is checked
+# separately (1.4×); that detour was only ~1.11× as long, so miles alone
+# would have kept it.
+MAX_VIA_DURATION_FACTOR = 1.25
+
+
 def get_routes(origin, destination, wanted=3):
     """Return up to `wanted` distinct routes.
 
     OSRM's `alternatives` often gives back only one or two routes, especially
     on long trips. When that happens we push the router onto other roads by
-    adding a via point to the left/right of the straight line. This is the
-    most "hacky" part of the backend and is the first thing I'd replace with a
-    provider that supports real alternatives for trucks (HERE, TomTom, ORS
-    driving-hgv).
+    adding a via point to the left/right of the straight line. Detours more
+    than 40% longer, or more than 25% slower than the fastest route, are
+    dropped. This is the most "hacky" part of the backend and is the first
+    thing I'd replace with a provider that supports real alternatives for
+    trucks (HERE, TomTom, ORS driving-hgv).
     """
     routes = []
     for r in _osrm([origin, destination], alternatives=wanted):
@@ -131,6 +140,7 @@ def get_routes(origin, destination, wanted=3):
             routes.append(r)
 
     if len(routes) < wanted:
+        fastest_s = min(r["osrm_duration_s"] for r in routes)
         straight = haversine_mi(origin, destination)
         side = max(15.0, straight * 0.15)
         for fraction, mult in [(0.5, 1), (0.5, -1), (0.5, 2), (0.5, -2), (0.33, 1), (0.66, -1)]:
@@ -143,8 +153,11 @@ def get_routes(origin, destination, wanted=3):
                 log.info("via-point route failed: %s", exc)
                 continue
             r = found[0]
-            # a detour that adds more than 40% isn't a sensible option
+            # a detour that adds more than 40% distance isn't a sensible option
             if r["distance_mi"] > routes[0]["distance_mi"] * 1.4:
+                continue
+            # nor is one that takes more than 25% longer than the fastest route
+            if r["osrm_duration_s"] > fastest_s * MAX_VIA_DURATION_FACTOR:
                 continue
             if not _is_duplicate(r, routes):
                 routes.append(r)
@@ -156,6 +169,10 @@ def get_routes(origin, destination, wanted=3):
 
 WEATHER_VARS = ["wind_speed_10m", "wind_gusts_10m", "rain", "showers", "snowfall"]
 CHUNK = 100  # Open-Meteo accepts many locations per call, keep URLs sane
+# Hourly forecasts don't move faster than the hour. 45 minutes sits inside
+# the 30–60 minute window: long enough that a repeat demo doesn't burn the
+# free-tier quota, short enough that a refreshed forecast shows up the same day.
+WEATHER_CACHE_SECONDS = 45 * 60
 
 
 def _fetch_weather_chunk(points, start_hour, end_hour):
@@ -171,6 +188,7 @@ def _fetch_weather_chunk(points, start_hour, end_hour):
             "start_hour": start_hour,
             "end_hour": end_hour,
         },
+        cache_seconds=WEATHER_CACHE_SECONDS,
     )
     return data if isinstance(data, list) else [data]
 

@@ -120,12 +120,24 @@ def summarize_route(checkpoints):
     }
 
 
-def ranking_key(route):
-    """Sort key implementing the brief's priority list.
+# Average risk is a distance-weighted mean of levels 0–4. By the time we
+# compare it, No Travel, Severe and High miles are already tied, so the only
+# thing left in the average is Low vs Moderate (plus a longer route diluting
+# the same bad miles). A gap below 0.25 is less than a quarter of the route
+# sitting one band worse, which is not worth extra hours. A gap of 0.25 or
+# more still prefers the calmer route. This is not 1-decimal rounding: 0.00
+# and 0.10 differ at one decimal, and that Denver case is dropped earlier by
+# the via-route duration cap.
+AVG_RISK_TOLERANCE = 0.25
 
-    The brief lists: fewest Severe miles, fewest High miles, lowest average
-    risk, shortest time. It doesn't mention No Travel, but a No Travel mile
-    is clearly worse than a Severe one, so it goes in front.
+
+def ranking_key(route):
+    """Strict order from the brief, with No Travel in front.
+
+    Fewest No Travel miles, then Severe, then High, then average risk, then
+    time. `recommend` uses the first three fields as-is and applies
+    AVG_RISK_TOLERANCE to the average, because a tolerance depends on the
+    calmest route in the group and is not a per-route sort key.
     """
     m = route["summary"]["miles_by_level"]
     return (
@@ -138,6 +150,16 @@ def ranking_key(route):
 
 
 def recommend(routes):
+    """Pick the route a driver should take.
+
+    No Travel, Severe and High miles are compared exactly. Average risk is
+    then a tie unless the gap is at least AVG_RISK_TOLERANCE, in which case
+    the calmer route wins. Otherwise the shorter trip wins.
+    """
     if not routes:
         return None
-    return min(routes, key=ranking_key)
+    best_bands = min(ranking_key(r)[:3] for r in routes)
+    contenders = [r for r in routes if ranking_key(r)[:3] == best_bands]
+    calmest = min(r["summary"]["avg_risk"] for r in contenders)
+    close = [r for r in contenders if r["summary"]["avg_risk"] - calmest < AVG_RISK_TOLERANCE]
+    return min(close, key=lambda r: (r["duration_s"], r["summary"]["avg_risk"]))

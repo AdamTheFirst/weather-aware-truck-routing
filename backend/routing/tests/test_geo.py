@@ -3,6 +3,7 @@ import pytest
 from routing.geo import (
     TRUCK_MAX_MPH,
     corridor_grid,
+    dedupe_coords,
     haversine_mi,
     offset_point,
     sample_checkpoints,
@@ -57,3 +58,17 @@ def test_corridor_grid_respects_budget():
     route = [(-100 + i * 0.1, 35) for i in range(100)]
     pts, step = corridor_grid([route], max_points=50)
     assert 0 < len(pts) <= 50
+
+
+def test_default_corridor_grid_stays_within_120():
+    # A long haul. The default budget is what the weather call actually uses.
+    route = [(-122 + i * 0.15, 37 + (i % 7) * 0.02) for i in range(120)]
+    pts, _step = corridor_grid([route])
+    assert 0 < len(pts) <= 120
+
+
+def test_dedupe_coords_collapses_one_cell_and_remembers_the_index():
+    unique, indexes = dedupe_coords([(0.0, 0.0), (0.01, -0.01), (1.0, 1.0)], step_deg=0.05)
+    assert unique[0] == (0.0, 0.0)
+    assert indexes == [0, 0, 1]
+    assert len(unique) == 2

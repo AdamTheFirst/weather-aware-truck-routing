@@ -21,6 +21,12 @@ MAX_DAYS_AHEAD = 10
 
 
 @require_GET
+def health_view(request):
+    """Liveness check. No upstream calls, so a cold host can answer immediately."""
+    return JsonResponse({"ok": True})
+
+
+@require_GET
 def geocode_view(request):
     q = request.GET.get("q", "").strip()
     if len(q) < 3:
@@ -66,7 +72,12 @@ def _parse_plan_request(body):
     if not 0 <= load_lb <= MAX_LOAD_LB:
         raise ValueError(f"Load must be between 0 and {MAX_LOAD_LB:,} lb")
 
-    interval = int(body.get("interval_mi", 25))
+    # body.get returns None when the key is present and null, and int(None)
+    # raises TypeError. That used to fall through as a 500 HTML page.
+    try:
+        interval = int(body.get("interval_mi", 25))
+    except (TypeError, ValueError):
+        raise ValueError("interval_mi must be 10, 25 or 50")
     if interval not in ALLOWED_INTERVALS:
         raise ValueError("interval_mi must be 10, 25 or 50")
 
