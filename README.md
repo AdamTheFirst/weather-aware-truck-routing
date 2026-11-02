@@ -2,7 +2,7 @@
 
 A React + Django app that helps a truck driver pick the safest route. You enter where you're going, when you leave and how heavy the load is. The app compares three routes using the forecast at each point **at the time the truck will actually be there**.
 
-- **Live demo:** https://weather-aware-truck-routing.onrender.com — the free tier cold-starts in about 50 s after idle.
+- **Live demo:** https://truck-routing-7za4.onrender.com — the free tier cold-starts in about 50 s after idle.
 - **Walkthrough video:** _TODO: add the Loom link_
 
 ![The app comparing three Denver to Salt Lake City routes, with the forecast slider](docs/screenshot.png)
@@ -75,6 +75,15 @@ In production Django also serves the built React files (WhiteNoise), so it's **o
 | Geocoding | Photon (komoot)          | Free, no key, and its policy allows autocomplete (Nominatim's doesn't) |
 | Routing   | OSRM public demo server  | Free, no key, returns per-segment durations                         |
 | Weather   | Open-Meteo               | Free, no key, hourly forecast, many locations in one request        |
+
+### If a provider blocks the host
+
+Render's free tier shares an outbound address. Photon refuses that address, and Open-Meteo's free daily limit (10,000 calls, counted per IP) is often already used up there. Their terms name Render as a host that gets limited early. The demo keeps working without an API key:
+
+- **Place search** is sent to Photon from the browser, so it uses the visitor's own address. Photon allows that (`Access-Control-Allow-Origin: *`). If the browser cannot reach Photon, the server tries Photon and then [Open-Meteo Geocoding](https://open-meteo.com/en/docs/geocoding-api) (GeoNames, a different host from the forecast API). Nominatim is not used: its usage policy forbids autocomplete.
+- **Weather** is still fetched on the server, Open-Meteo first. If that call is refused or rate-limited, the same points are read from [MET Norway Locationforecast](https://api.met.no/weatherapi/locationforecast/2.0/documentation) and converted into the miles-per-hour and inches the risk table already uses. Coordinates are sent with 4 decimal places, calls stay near 8 per second (their cap is 20), and responses are cached for 45 minutes. The User-Agent names this app and the GitHub repository, which their terms require.
+
+Forecast data is © [Open-Meteo](https://open-meteo.com/) and [MET Norway](https://api.met.no/), both under CC BY 4.0. If both providers for a step fail, the page says so in plain language instead of a stack trace.
 
 All base URLs are in `settings.py`, so swapping a provider means changing an env var.
 
