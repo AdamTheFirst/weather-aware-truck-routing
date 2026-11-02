@@ -3,7 +3,7 @@
 A React + Django app that helps a truck driver pick the safest route. You enter where you're going, when you leave and how heavy the load is. The app compares three routes using the forecast at each point **at the time the truck will actually be there**.
 
 - **Live demo:** https://truck-routing-7za4.onrender.com — the free tier cold-starts in about 50 s after idle.
-- **Walkthrough video:** _TODO: add the Loom link_
+- **Walkthrough video:** [https://www.loom.com/share/b17e95f1e8ae45708b0e12e837e5eee5](https://www.loom.com/share/b17e95f1e8ae45708b0e12e837e5eee5)
 
 ![The app comparing three Denver to Salt Lake City routes, with the forecast slider](docs/screenshot.png)
 
