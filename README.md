@@ -2,10 +2,10 @@
 
 A React + Django app that helps a truck driver pick the safest route. You enter where you're going, when you leave and how heavy the load is. The app compares three routes using the forecast at each point **at the time the truck will actually be there**.
 
-- **Live demo:** _TODO: add the hosted link_
+- **Live demo:** https://weather-aware-truck-routing.onrender.com — the free tier cold-starts in about 50 s after idle.
 - **Walkthrough video:** _TODO: add the Loom link_
 
-![screenshot](docs/screenshot.png) <!-- TODO: add a screenshot -->
+![The app comparing three Denver to Salt Lake City routes, with the forecast slider](docs/screenshot.png)
 
 ---
 
@@ -89,6 +89,7 @@ All base URLs are in `settings.py`, so swapping a provider means changing an env
 ### Risk per checkpoint (`risk.py`)
 - Wind, rain and snow are each classified with the table from the brief. The **worst one wins**.
 - **Shared edges** (e.g. rain 0.25 appears in both Moderate and High): we go **upwards**, so a value on a boundary belongs to the higher band. For rain and snow, "No Travel" is strictly `>` as written (1.00 in/hr of rain is still Severe).
+- Checkpoints and the heatmap are both classified from the **raw** forecast. Wind is rounded to 0.1 mph and rain/snow to 0.001 in only for the numbers shown in the popup. Rounding first would turn 34.96 mph (Moderate) into 35.0 (High).
 - Load rules are applied to wind: 55+ mph means No Travel for any load; 45–54 mph with more than 30,000 lb means No Travel; 35–44 mph with more than 40,000 lb means at least Severe.
 - **Rain** = Open-Meteo `rain + showers` (large-scale + convective). **Wind** = sustained 10 m wind. Gusts are shown in the popup but aren't used for classification, because the table says "wind".
 
@@ -96,38 +97,43 @@ All base URLs are in `settings.py`, so swapping a provider means changing an env
 The ranking talks about Severe/High *miles*, but we only know the weather at points. Each stretch between two checkpoints gets the **worse of its two ends**. This is deliberately cautious: over-warning a truck driver is cheaper than under-warning them. Average risk is the distance-weighted average of those stretch levels (0 = Low ... 4 = No Travel).
 
 ### Recommendation
-Routes are sorted by: **No Travel miles** (my addition, see below), then Severe miles, then High miles, then average risk, then travel time. The UI shows a one-line reason for why the winner won.
+Routes are sorted by: **No Travel miles** (my addition, see below), then Severe miles, then High miles, then average risk, then travel time. The UI shows a one-line reason for why the winner won. If that route still has No Travel miles the banner is red, and if it still has Severe miles the banner is orange, instead of a green all-clear.
+
+Average risk is a distance-weighted mean of the levels 0–4. It is only consulted once No Travel, Severe and High miles are tied, so a small gap there is Low versus Moderate, not a storm the mile counts already caught. Gaps **below 0.25** (less than a quarter of the route one band worse) are treated as a tie and fall through to travel time. A gap of 0.25 or more still picks the calmer route. One-decimal rounding would not do this: 0.00 and 0.10 still differ at one decimal.
 
 > The brief doesn't mention No Travel in the ranking. A route with 1 mile of No Travel shouldn't beat a route with 50 Severe miles, so No Travel goes first.
 
 ### Getting 3 routes
-OSRM often returns only 1–2 alternatives. When that happens we add a via point to the left/right of the straight line between origin and destination and ask again. Results that are near-duplicates (within 2% distance and time) or detours more than 40% longer are dropped. It works, but it's the weakest part of the backend. A provider with real truck alternatives (HERE, TomTom, OpenRouteService `driving-hgv`) would be the first upgrade.
+OSRM often returns only 1–2 alternatives. When that happens we add a via point to the left/right of the straight line between origin and destination and ask again. Results that are near-duplicates (within 2% distance and time), detours more than 40% longer, or routes more than 25% slower than the fastest one are dropped. The time check matters: a Denver–Salt Lake City via route was only about 11% longer in miles but about 48% slower (13.27 h vs 8.98 h), and it was winning on a 0.10 average-risk gap. It works, but it's the weakest part of the backend. A provider with real truck alternatives (HERE, TomTom, OpenRouteService `driving-hgv`) would be the first upgrade.
 
 ### Heatmap
-- A grid of points is laid over the bounding box of all routes, keeping only points within ~40 miles of a route. Spacing grows on long trips so we stay under ~220 points.
+- A grid of points is laid over the bounding box of all routes, keeping only points within ~40 miles of a route. Spacing grows on long trips so we stay under ~120 points.
+- Checkpoint coordinates that fall in the same 0.05° cell (about 3 miles) are fetched once and reused. Routes that share a road don't each pay for the same forecast.
 - We fetch hourly weather for those points in the **same** batched Open-Meteo calls as the checkpoints, classify every point for every hour 0–48 (using the load too), and send them as small ints.
-- The frontend draws them on **one canvas** as soft radial blobs coloured by level. It's a custom Leaflet layer rather than `leaflet.heat`, because heat plugins show *density* (overlapping points add up), whereas this needs a *value* map. Moving the slider only re-colours ~200 blobs, so it repaints in about a millisecond.
+- The frontend draws them on **one canvas** as soft radial blobs coloured by level. It's a custom Leaflet layer rather than `leaflet.heat`, because heat plugins show *density* (overlapping points add up), whereas this needs a *value* map. Moving the slider only re-colours the blobs already on the map, so it repaints in about a millisecond.
 
 ## Performance notes
 - One request per plan. Weather for all points is batched (100 locations per call) and fetched in parallel threads.
-- Upstream responses are cached in memory for 10 minutes, so re-planning the same trip is fast.
+- Geocoding is cached for a day and routing for 10 minutes. Weather is cached for 45 minutes (hourly forecasts, and inside the 30–60 minute window that keeps the free tier happy). Re-planning the same trip is fast. The cache is in-process, so production runs gunicorn with one worker.
 - Display geometry is thinned to one point per ~0.15 mi (the maths still uses the full geometry). JSON is gzipped.
 - Leaflet uses `preferCanvas`, so hundreds of checkpoints don't become hundreds of SVG nodes.
 - Typical plan: ~5 s cold (mostly waiting on OSRM + Open-Meteo), under 1 s when cached.
 
 ## Assumptions and limitations
 - **Forecast horizon:** departures must be within 10 days. Forecast skill drops a lot after ~3 days anyway.
-- **Not a truck router:** no bridge heights, weight limits or hazmat restrictions. The brief says this isn't needed.
+- **ETAs exclude driver rest breaks.** Hours-of-service (HOS) rules — a 30 minute break and a 10 hour rest — are not added to the timeline, so a long haul is shown as continuous driving.
+- **Routing uses a car profile.** The OSRM public demo server has no truck profile, so bridge heights, weight limits and hazmat restrictions are not applied. Segment speed is capped at 65 mph as a rough correction.
 - **Free public APIs** have rate limits. For real use you'd self-host OSRM or use a paid provider.
 - **"10 / 25 / 50 miles"** is read as a user choice, not three sampling rates at once.
 - No auth, no database. Nothing is stored.
 
 ## What I'd do next
-- Real truck-profile routing with proper alternatives.
+- Truck-profile routing (OpenRouteService `driving-hgv`, HERE or TomTom) with proper alternatives, instead of the car profile and via-point fallback.
+- Hours-of-service breaks in the ETAs, so a 30 minute break after 8 hours and a 10 hour rest after 11 hours move the checkpoint times.
 - Use gusts for high-profile vehicles, plus visibility, ice and freezing rain.
 - A "leave later" suggestion: re-run the plan for departure +2 h, +4 h... and show if waiting is safer.
 - Streaming or progress for the ~5 s plan request.
 - Frontend tests (Vitest + React Testing Library) and an end-to-end test with Playwright.
 
 ## Deploying
-The `Dockerfile` builds the frontend and serves everything with gunicorn. `render.yaml` deploys it on Render's free plan (Docker runtime). Set `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`.
+The `Dockerfile` builds the frontend and serves it and the API with gunicorn on `$PORT` (8000 locally). One worker, eight threads, so the in-memory cache is shared. `render.yaml` is a Render Blueprint: one Docker web service on the free plan, `DJANGO_SECRET_KEY` generated, `DJANGO_ALLOWED_HOSTS=.onrender.com`, health check at `/api/health`. The free instance sleeps when idle and the next request takes about 50 seconds.
